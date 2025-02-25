@@ -60,7 +60,6 @@ struct ResponseCC {
 struct UnexploredRoom {
     DWORD ID;
     int distance;
-    float intensity = 0.0f;
 };
 #pragma pack(pop)
 
