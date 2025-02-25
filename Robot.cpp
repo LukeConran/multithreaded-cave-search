@@ -25,7 +25,6 @@ void handleRobot(Robot& robot) {
         return;
     }
 
-    // Handle dynamic buffer resizing if more data is available
     DWORD bytesAvailable = 0;
     if (!PeekNamedPipe(robot.getPipe(), NULL, 0, NULL, &bytesAvailable, NULL)) {
         printf("Error peeking pipe for robot %d: %d\n", robot.getIndex(), GetLastError());

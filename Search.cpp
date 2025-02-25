@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "Search.h"
 #include "ProcessManager.h"
+#include "ReadBuffer.h"
 
 void Search::Run(int robotIndex, DWORD processId, Ubase* storage, Stats& stats,
     std::mutex& mtx, HANDLE eventQuit, HANDLE semaphore, Discovered& discovered) {
@@ -23,7 +24,7 @@ void Search::Run(int robotIndex, DWORD processId, Ubase* storage, Stats& stats,
 
     {
         std::lock_guard<std::mutex> lock(mtx);
-        if (discovered.checkAdd(robot.getCurrentNode())) { //might be something to optimize
+        if (discovered.checkAdd(robot.getCurrentNode())) { //might be something to optimize (get just the ID's?)
             storage->push(robot.getCurrentNode(), 0);
             stats.recordDiscoveredRoom();
             ReleaseSemaphore(semaphore, 1, NULL);
@@ -53,9 +54,9 @@ void Search::Run(int robotIndex, DWORD processId, Ubase* storage, Stats& stats,
         DWORD commandSize = sizeof(CommandRobotHeader) + sizeof(DWORD) * batchSize;
         char* commandBuffer = new char[commandSize];
         memcpy(commandBuffer, &moveCommand, sizeof(CommandRobotHeader));
-        DWORD* roomIDs = new DWORD[batchSize];
+        DWORD* roomIDs = new DWORD[batchSize]; // Can I somehow do this without as many heap allocated arrays?
         for (int i = 0; i < batchSize; i++) {
-            roomIDs[i] = batchOfRooms[i].ID;
+            roomIDs[i] = batchOfRooms[i].ID; // This has to be able to be done without a for loop somehow
         }
         memcpy(commandBuffer + sizeof(CommandRobotHeader), roomIDs, sizeof(DWORD) * batchSize);
 
@@ -70,37 +71,10 @@ void Search::Run(int robotIndex, DWORD processId, Ubase* storage, Stats& stats,
         delete[] commandBuffer;
         delete[] roomIDs;
 
-        DWORD bytesRead = 0;
-        if (!ReadFile(robot.getPipe(), robot.getBuffer(), robot.getBufferSize(), &bytesRead, NULL)) {
-            printf("Error reading response from robot %d: %d\n", robot.getIndex(), GetLastError());
+        if (!ReadBuffer::ReadTheBuffer(robot)) {
             delete[] batchOfRooms;
             stats.decrementActiveThreads();
             break;
-        }
-
-        DWORD bytesAvailable = 0;
-        if (!PeekNamedPipe(robot.getPipe(), NULL, 0, NULL, &bytesAvailable, NULL)) {
-            printf("Error peeking robot pipe for %d: %d\n", robot.getIndex(), GetLastError());
-            delete[] batchOfRooms;
-            stats.decrementActiveThreads();
-            break;
-        }
-
-        if (bytesAvailable > 0) {
-            char* newBuffer = new char[bytesRead + bytesAvailable];
-            robot.setBufferSize(bytesRead + bytesAvailable);
-            memcpy(newBuffer, robot.getBuffer(), bytesRead);
-            delete[] robot.getBuffer();
-            robot.setBuffer(newBuffer);
-
-            DWORD extraBytesRead = 0;
-            if (!ReadFile(robot.getPipe(), robot.getBuffer() + bytesRead, bytesAvailable, &extraBytesRead, NULL)) {
-                printf("Error reading remaining response from robot %d: %d\n", robot.getIndex(), GetLastError());
-                delete[] batchOfRooms;
-                stats.decrementActiveThreads();
-                break;
-            }
-            bytesRead += bytesAvailable;
         }
 
         char* bufferPtr = robot.getBuffer();
@@ -117,7 +91,7 @@ void Search::Run(int robotIndex, DWORD processId, Ubase* storage, Stats& stats,
                 default: errorMsg = "Unknown error"; break;
                 }
                 printf("Robot %d: Error for room %u - %s (Status %d)\n", robotIndex, batchOfRooms[i].ID, errorMsg, response->status);
-                continue; // Use continue instead of break to process remaining rooms
+                continue;
             }
 
             if (response->len == 0) { // Exit found
@@ -128,21 +102,23 @@ void Search::Run(int robotIndex, DWORD processId, Ubase* storage, Stats& stats,
                 }
             }
             else {
-                std::lock_guard<std::mutex> lock(mtx);
                 DWORD* neighbors = reinterpret_cast<DWORD*>(bufferPtr);
-                for (DWORD j = 0; j < response->len; j++) {
-                    if (discovered.checkAdd(neighbors[j])) {
-                        storage->push(neighbors[j], (batchOfRooms[i].distance) + 1);
-                        stats.recordDiscoveredRoom();
-                        ReleaseSemaphore(semaphore, 1, NULL);
-                        //do i need to increment bufferPtr here
+                {
+                    std::lock_guard<std::mutex> lock(mtx);
+                    for (DWORD j = 0; j < response->len; j++) {
+                        if (discovered.checkAdd(neighbors[j])) {
+                            storage->push(neighbors[j], (batchOfRooms[i].distance) + 1);
+                            stats.recordDiscoveredRoom();
+                            ReleaseSemaphore(semaphore, 1, NULL);
+                            //do i need to increment bufferPtr here
+                        }
+                    }
+                    if (storage->size() == 0 && stats.getActiveThreads() == 1) {
+                        printf("There is no exit to this cave.\n");
+                        SetEvent(eventQuit);
                     }
                 }
                 bufferPtr += sizeof(DWORD) * response->len;
-                if (storage->size() == 0 && stats.getActiveThreads() == 1) {
-                    printf("There is no exit to this cave.\n");
-                    SetEvent(eventQuit);
-                }
             }
         }
         

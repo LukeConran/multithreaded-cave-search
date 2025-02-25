@@ -35,27 +35,6 @@ struct ResponseCC {
 };
 #pragma pack(pop)
 
-//#pragma pack(push,1)
-//struct CommandRobot {
-//    DWORD command;
-//    uint64_t room;
-//};
-//#pragma pack(pop)
-//
-//#pragma pack(push,1)
-//struct ResponseRobot {
-//    DWORD status;
-//    char msg[64];
-//};
-//#pragma pack(pop)
-
-//#pragma pack(push,1)
-//struct NodeTuple64 {
-//    uint64_t node;
-//    float intensity;
-//};
-//#pragma pack(pop)
-
 #pragma pack(push,1)
 struct UnexploredRoom {
     DWORD ID;

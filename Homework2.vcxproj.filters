@@ -39,6 +39,12 @@
     <ClCompile Include="Storage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="MyQueue.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ReadBuffer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -66,6 +72,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Storage.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MyQueue.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ReadBuffer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
