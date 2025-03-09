@@ -14,7 +14,7 @@ private:
     int index;
     DWORD bufferSize;
     char* buffer;
-    DWORD* currentNode; //I these need to be something else (for the LPWORD)
+    DWORD* currentNode;
 public:
     Robot(HANDLE p, int i);
     Robot(Robot&& other) noexcept;
@@ -27,8 +27,8 @@ public:
     DWORD& getBufferSize() { return bufferSize; }
     void setBuffer(char* buf) { buffer = buf; }
     void setBufferSize(DWORD bufSize) { bufferSize = bufSize; }
-    DWORD getCurrentNode() const { return *currentNode; } //I think the LPWORD and the following line need to be something else
-    void setCurrentNode(DWORD* node) { currentNode = node; } //
+    DWORD getCurrentNode() const { return *currentNode; }
+    void setCurrentNode(DWORD* node) { currentNode = node; }
 };
 
 void handleRobot(Robot& robot);

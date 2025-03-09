@@ -3,8 +3,7 @@
 #include "ProcessManager.h"
 #include "ReadBuffer.h"
 
-void Search::Run(int robotIndex, DWORD processId, Ubase* storage, Stats& stats,
-    std::mutex& mtx, HANDLE eventQuit, HANDLE semaphore, Discovered& discovered) {
+void Search::Run(int robotIndex, DWORD processId) {
     if (!SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE)) {
         printf("Failed to set thread %d to idle priority: %d\n", robotIndex, GetLastError());
         return;
@@ -23,30 +22,36 @@ void Search::Run(int robotIndex, DWORD processId, Ubase* storage, Stats& stats,
     handleRobot(robot);
 
     {
-        std::lock_guard<std::mutex> lock(mtx);
+        EnterCriticalSection(&cs);
         if (discovered.checkAdd(robot.getCurrentNode())) { //might be something to optimize (get just the ID's?)
             storage->push(robot.getCurrentNode(), 0);
             stats.recordDiscoveredRoom();
-            ReleaseSemaphore(semaphore, 1, NULL);
+            //ReleaseSemaphore(semaphore, 1, NULL);
         }
+        LeaveCriticalSection(&cs);
     }
 
-    HANDLE waitHandles[2] = { eventQuit, semaphore };
+    //HANDLE waitHandles[2] = { eventQuit, semaphore };
     while (true) {
-        DWORD waitResult = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+         //DWORD waitResult = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+        DWORD waitResult = WaitForSingleObject(eventQuit, 0);
         if (waitResult == WAIT_OBJECT_0) break;
 
         int batchSize;
         UnexploredRoom* batchOfRooms;
         {
-            std::lock_guard<std::mutex> lock(mtx);
-            if (storage->size() == 0) continue;
+            EnterCriticalSection(&cs);
+            if (storage->size() == 0) {
+                LeaveCriticalSection(&cs);
+                continue;
+            }
             batchSize = 10000 < storage->size() ? 10000 : storage->size();
             batchOfRooms = new UnexploredRoom[batchSize];
             for (int i = 0; i < batchSize; i++) {
                 batchOfRooms[i] = storage->pop();
                 stats.recordExploredRoom();
             }
+            LeaveCriticalSection(&cs);
         }
         stats.incrementActiveThreads();
 
@@ -95,28 +100,29 @@ void Search::Run(int robotIndex, DWORD processId, Ubase* storage, Stats& stats,
             }
 
             if (response->len == 0) { // Exit found
-                std::lock_guard<std::mutex> lock(mtx);
+                EnterCriticalSection(&cs);
                 if (WaitForSingleObject(eventQuit, 0) != WAIT_OBJECT_0) {
                     printf("Thread %d: found exit %u, steps %d, distance %d\n", robotIndex, batchOfRooms[i].ID, stats.getExploredRooms(), batchOfRooms[i].distance);
                     SetEvent(eventQuit);
                 }
+                LeaveCriticalSection(&cs);
             }
             else {
                 DWORD* neighbors = reinterpret_cast<DWORD*>(bufferPtr);
                 {
-                    std::lock_guard<std::mutex> lock(mtx);
+                    EnterCriticalSection(&cs);
                     for (DWORD j = 0; j < response->len; j++) {
                         if (discovered.checkAdd(neighbors[j])) {
                             storage->push(neighbors[j], (batchOfRooms[i].distance) + 1);
                             stats.recordDiscoveredRoom();
-                            ReleaseSemaphore(semaphore, 1, NULL);
-                            //do i need to increment bufferPtr here
+                            //ReleaseSemaphore(semaphore, 1, NULL); // No need for semaphore
                         }
                     }
                     if (storage->size() == 0 && stats.getActiveThreads() == 1) {
                         printf("There is no exit to this cave.\n");
                         SetEvent(eventQuit);
                     }
+                    LeaveCriticalSection(&cs);
                 }
                 bufferPtr += sizeof(DWORD) * response->len;
             }
@@ -130,7 +136,7 @@ void Search::Run(int robotIndex, DWORD processId, Ubase* storage, Stats& stats,
     stats.decrementTotalThreads();
 }
 
-void Search::StatsThread(Stats& stats, HANDLE eventQuit) {
+void Search::StatsThread() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
     auto nextPrintTime = std::chrono::steady_clock::now() + std::chrono::seconds(2);
 
